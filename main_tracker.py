@@ -1,90 +1,93 @@
-import cv2  # Importa libraria OpenCV pentru procesarea imaginilor si video-urilor
-from model_loader import load_yolo_model  # Importa functia care incarca modelul YOLO
-from video_manager import open_video, initialize_video_writer, release_video  # Importa functii pentru manipularea video-urilor
-from vehicle_detector import detect_vehicles  # Importa functia pentru detectarea vehiculelor
-from tracker import Tracker  # Importa clasa pentru urmarirea obiectelor
+# main_tracker.py
+
+import cv2
+from model_loader import load_yolo_model
+from video_manager import open_video, initialize_video_writer, release_video
+from vehicle_detector import detect_vehicles
+from tracker import Tracker
+from red_vehicle_counter import is_vehicle_red
+
 
 def real_time_detection(video_path, output_path):
-    # Incarca modelul YOLO utilizand functia definita in model_loader.py
+    # Incarca modelul YOLO
     model = load_yolo_model("yolo11s.pt")
 
-    # Deschide video-ul pentru procesare
+    # Deschide videoclipul
     cap = open_video(video_path)
-    if cap is None:  # Verifica daca video-ul a fost deschis cu succes
+    if cap is None:
         return
 
-    # Obtine FPS-ul si dimensiunile video-ului
-    fps = int(cap.get(cv2.CAP_PROP_FPS))  # FPS-ul video-ului
-    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))  # Largimea cadrului video
-    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))  # Inaltimea cadrului video
+    # Proprietati video
+    fps = int(cap.get(cv2.CAP_PROP_FPS))
+    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-    # Initializare obiect pentru a salva video-ul procesat
+    # Initializeaza scrierea videoclipului de iesire
     out = initialize_video_writer(frame_width, frame_height, output_path, fps)
 
-    # Creeaza un obiect pentru tracker
+    # Creeaza tracker
     tracker = Tracker()
+    counted_red_vehicles = set()  # Vehicule rosii contorizate pentru linia rosie
+    red_vehicle_count = 0  # Contor vehicule rosii
+    entry_count, exit_count = 0, 0  # Contoare vehicule intrate si iesite
 
-    # Initializare contorizare vehicule intrate si iesite
-    entry_count, exit_count = 0, 0
+    # Definirea liniilor
+    detection_line = int(frame_height * 0.5)  # Linie galbena (intrare/iesire)
+    red_detection_line = int(frame_height * 0.6)  # Linie rosie pentru vehicule rosii
 
-    # Definirea liniilor de intrare si iesire
-    entry_line = int(frame_height * 0.5)  # Linia de intrare la 60% din inaltimea cadrului
-    exit_line = int(frame_height * 0.6)   # Linia de iesire la 90% din inaltimea cadrului
-    
-    # Definirea liniilor pentru benzi (presupunem 6 benzi)
-    lane_width = frame_width // 6  # Latimea fiecarei benzi
-    lane_positions = [lane_width * i for i in range(1, 6)]  # Pozitiile liniilor de benzi
-
-    # Procesarea fiecarui cadru din video
+    # Procesare cadre video
     while cap.isOpened():
-        ret, frame = cap.read()  # Citeste un cadru din video
-        if not ret:  # Daca nu se poate citi cadrul, iesim din bucla
+        ret, frame = cap.read()
+        if not ret:
             break
 
-        # Detecteaza vehicule in cadrul curent
+        # Detecteaza vehicule
         detections = detect_vehicles(frame, model)
-        # Urmareste obiectele detectate
-        tracked_objects = tracker.update([(x, y, w, h) for x, y, w, h, _ in detections])
+        tracked_objects, entered, exited, speeds = tracker.update(
+            [(x, y, w, h) for x, y, w, h, _ in detections], detection_line, fps)
 
-        # Procesarea fiecarei detectii
+        entry_count += entered  # Actualizam numarul vehiculelor intrate
+        exit_count += exited    # Actualizam numarul vehiculelor iesite
+
+        # Procesare detectari
         for obj, det in zip(tracked_objects, detections):
-            x, y, w, h, obj_id = obj  # Coordonatele si ID-ul obiectului
-            label = det[-1]  # Eticheta vehiculului (tipul vehiculului)
-            cx, cy = tracker.center_points[obj_id]  # Punctul central al obiectului
+            x, y, w, h, obj_id = obj
+            label = det[-1]
+            speed = speeds.get(obj_id, 0)
+            cx, cy = x + w // 2, y + h // 2  # Calculam centrul
 
-            # Verifica daca vehiculul a trecut de linii
-            if tracker.crossed[obj_id] == 0:  # Daca vehiculul nu a trecut inca
-                if cy < entry_line:  # Daca a trecut de linia de intrare
-                    tracker.crossed[obj_id] = 1  # Marcam ca trecut prin intrare
-                elif cy > exit_line:  # Daca a trecut de linia de iesire
-                    tracker.crossed[obj_id] = 2  # Marcam ca trecut prin iesire
-            elif tracker.crossed[obj_id] == 1:  # Daca vehiculul a trecut prin intrare
-                if cy > entry_line:  # Daca a depasit linia de intrare
-                    entry_count += 1  # Incrementeaza numarul de vehicule intrate
-                    tracker.crossed[obj_id] = 3  # Marcam ca finalizat
-            elif tracker.crossed[obj_id] == 2:  # Daca vehiculul a trecut prin iesire
-                if cy < exit_line:  # Daca a depasit linia de iesire
-                    exit_count += 1  # Incrementeaza numarul de vehicule iesite
-                    tracker.crossed[obj_id] = 3  # Marcam ca finalizat
+            # ROI vehicul
+            x_end, y_end = min(x + w, frame_width), min(y + h, frame_height)
+            x_start, y_start = max(x, 0), max(y, 0)
+            vehicle_roi = frame[y_start:y_end, x_start:x_end]
+            
+            # Detecteaza vehicule rosii care trec linia rosie
+            if abs(cy - red_detection_line) <= 10:
+                if is_vehicle_red(vehicle_roi):
+                    if obj_id not in counted_red_vehicles:
+                        counted_red_vehicles.add(obj_id)
+                        red_vehicle_count += 1
+                        # Evidentiaza vehiculul rosu
+                        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
+                        cv2.putText(frame, "Red Vehicle", (x, y - 10),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
 
-            # Desenam dreptunghiul si eticheta vehiculului pe cadru
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)  # Deseneaza dreptunghiul de detectie
-            cv2.putText(frame, f"{label}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)  # Afiseaza eticheta vehiculului
+            # Evidentiaza toate vehiculele detectate
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            cv2.putText(frame, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+            cv2.putText(frame, f"Viteza: {speed:.1f} px/s", (x, y + h + 20),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
 
-        # Desenam liniile de intrare si iesire pe cadru
-        cv2.line(frame, (0, entry_line), (frame_width, entry_line), (0, 255, 255), 2)  # Linia de intrare galbena
-        cv2.line(frame, (0, exit_line), (frame_width, exit_line), (0, 0, 255), 2)  # Linia de iesire rosie
+        # Deseneaza liniile orizontale
+        cv2.line(frame, (0, detection_line), (frame_width, detection_line), (0, 255, 255), 2)  # Linie galbena
+        cv2.putText(frame, f"Vehicule Intrate: {entry_count}", (10, detection_line - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 255), 2)
+        cv2.putText(frame, f"Vehicule Iesite: {exit_count}", (10, detection_line + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 255), 2)
 
-        # Desenam liniile de benzi
-        for pos in lane_positions:
-            cv2.line(frame, (pos, 0), (pos, frame_height), (255, 255, 255), 1)  # Linii albe pentru benzi
+        cv2.line(frame, (0, red_detection_line), (frame_width, red_detection_line), (0, 0, 255), 2)  # Linie rosie
+        cv2.putText(frame, f"Vehicule Rosii: {red_vehicle_count}", (10, red_detection_line - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
 
-        # Afisam numarul de vehicule intrate si iesite
-        cv2.putText(frame, f"Vehicule Intrate: {entry_count}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
-        cv2.putText(frame, f"Vehicule Iesite: {exit_count}", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-
-        # Scriem cadrul procesat in fisierul de iesire
+        # Scrie cadrul in fisierul de iesire
         out.write(frame)
 
-    # Eliberam resursele video
+    # Elibereaza resurse
     release_video(cap, out)

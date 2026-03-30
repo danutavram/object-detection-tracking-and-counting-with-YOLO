@@ -1,11 +1,12 @@
 # video_manager.py
+
 import cv2
 
 def open_video(video_path):
     """
-    Deschide un fișier video pentru a putea fi procesat.
+    Deschide un fisier video pentru a putea fi procesat.
     Args:
-        video_path (str): Calea către fișierul video de intrare.
+        video_path (str): Calea catre fisierul video de intrare.
     Returns:
         cap (cv2.VideoCapture): Obiectul care permite citirea video-ului.
     """
@@ -15,14 +16,14 @@ def open_video(video_path):
         return None
     return cap
 
-def initialize_video_writer(frame_width, frame_height, output_path, fps=240):
+def initialize_video_writer(frame_width=1920, frame_height=1080, output_path="output_video.mp4", fps=60):
     """
-    Initializează VideoWriter pentru a salva videoclipul procesat.
+    Initializeaza VideoWriter pentru a salva videoclipul procesat.
     Args:
-        frame_width (int): Lățimea cadrului video.
-        frame_height (int): Înălțimea cadrului video.
-        output_path (str): Calea către fișierul de ieșire.
-        fps (int): Numărul de cadre pe secundă.
+        frame_width (int): Latimea cadrului video.
+        frame_height (int): Inaltimea cadrului video.
+        output_path (str): Calea catre fisierul de iesire.
+        fps (int): Numarul de cadre pe secunda.
     Returns:
         out (cv2.VideoWriter): Obiectul care permite scrierea video-ului procesat.
     """
@@ -31,7 +32,7 @@ def initialize_video_writer(frame_width, frame_height, output_path, fps=240):
 
 def release_video(cap, out):
     """
-    Eliberează resursele video-ului.
+    Elibereaza resursele video-ului.
     Args:
         cap (cv2.VideoCapture): Obiectul video care trebuie eliberat.
         out (cv2.VideoWriter): Obiectul VideoWriter care trebuie eliberat.

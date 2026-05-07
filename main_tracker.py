@@ -27,13 +27,17 @@ def real_time_detection(video_path, output_path):
 
     # Creeaza tracker
     tracker = Tracker()
-    counted_red_vehicles = set()  # Vehicule rosii contorizate pentru linia rosie
-    red_vehicle_count = 0  # Contor vehicule rosii
-    entry_count, exit_count = 0, 0  # Contoare vehicule intrate si iesite
+    counted_red_vehicles = set()
+    red_vehicle_count = 0
+    entry_count, exit_count = 0, 0
 
     # Definirea liniilor
-    detection_line = int(frame_height * 0.5)  # Linie galbena (intrare/iesire)
-    red_detection_line = int(frame_height * 0.6)  # Linie rosie pentru vehicule rosii
+    detection_line = int(frame_height * 0.5)      # Linie galbena (intrare/iesire)
+    speed_line_1 = int(frame_height * 0.35)        # Linia de viteza 1 (sus) - cyan
+    speed_line_2 = int(frame_height * 0.65)        # Linia de viteza 2 (jos) - cyan
+    red_detection_line = int(frame_height * 0.70)  # Linie rosie pentru vehicule rosii
+
+    frame_number = 0
 
     # Procesare cadre video
     while cap.isOpened():
@@ -44,30 +48,30 @@ def real_time_detection(video_path, output_path):
         # Detecteaza vehicule
         detections = detect_vehicles(frame, model)
         tracked_objects, entered, exited, speeds = tracker.update(
-            [(x, y, w, h) for x, y, w, h, _ in detections], detection_line, fps)
+            [(x, y, w, h) for x, y, w, h, _ in detections],
+            detection_line, fps, frame_number, speed_line_1, speed_line_2)
 
-        entry_count += entered  # Actualizam numarul vehiculelor intrate
-        exit_count += exited    # Actualizam numarul vehiculelor iesite
+        entry_count += entered
+        exit_count += exited
 
         # Procesare detectari
         for obj, det in zip(tracked_objects, detections):
             x, y, w, h, obj_id = obj
             label = det[-1]
             speed = speeds.get(obj_id, 0)
-            cx, cy = x + w // 2, y + h // 2  # Calculam centrul
+            cx, cy = x + w // 2, y + h // 2
 
             # ROI vehicul
             x_end, y_end = min(x + w, frame_width), min(y + h, frame_height)
             x_start, y_start = max(x, 0), max(y, 0)
             vehicle_roi = frame[y_start:y_end, x_start:x_end]
-            
+
             # Detecteaza vehicule rosii care trec linia rosie
             if abs(cy - red_detection_line) <= 10:
                 if is_vehicle_red(vehicle_roi):
                     if obj_id not in counted_red_vehicles:
                         counted_red_vehicles.add(obj_id)
                         red_vehicle_count += 1
-                        # Evidentiaza vehiculul rosu
                         cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 2)
                         cv2.putText(frame, "Red Vehicle", (x, y - 10),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
@@ -75,19 +79,37 @@ def real_time_detection(video_path, output_path):
             # Evidentiaza toate vehiculele detectate
             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
             cv2.putText(frame, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-            cv2.putText(frame, f"Viteza: {speed:.1f} px/s", (x, y + h + 20),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
 
-        # Deseneaza liniile orizontale
-        cv2.line(frame, (0, detection_line), (frame_width, detection_line), (0, 255, 255), 2)  # Linie galbena
-        cv2.putText(frame, f"Vehicule Intrate: {entry_count}", (10, detection_line - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 255), 2)
-        cv2.putText(frame, f"Vehicule Iesite: {exit_count}", (10, detection_line + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 255), 2)
+            # Afiseaza viteza doar daca a fost calculata (vehiculul a traversat ambele linii)
+            if speed > 5:
+                cv2.putText(frame, f"{speed:.0f} km/h", (x, y + h + 20),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
 
-        cv2.line(frame, (0, red_detection_line), (frame_width, red_detection_line), (0, 0, 255), 2)  # Linie rosie
-        cv2.putText(frame, f"Vehicule Rosii: {red_vehicle_count}", (10, red_detection_line - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+        # --- Deseneaza liniile ---
+        # Linii de viteza (cyan, punctate)
+        for lx in range(0, frame_width, 20):
+            cv2.line(frame, (lx, speed_line_1), (lx + 10, speed_line_1), (255, 255, 0), 2)
+            cv2.line(frame, (lx, speed_line_2), (lx + 10, speed_line_2), (255, 255, 0), 2)
+        cv2.putText(frame, "SPEED LINE 1", (frame_width - 250, speed_line_1 - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+        cv2.putText(frame, "SPEED LINE 2", (frame_width - 250, speed_line_2 - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+
+        # Linie galbena (contorizare)
+        cv2.line(frame, (0, detection_line), (frame_width, detection_line), (0, 255, 255), 2)
+        cv2.putText(frame, f"Vehicule Intrate: {entry_count}", (10, detection_line - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 255), 2)
+        cv2.putText(frame, f"Vehicule Iesite: {exit_count}", (10, detection_line + 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 255), 2)
+
+        # Linie rosie (vehicule rosii)
+        cv2.line(frame, (0, red_detection_line), (frame_width, red_detection_line), (0, 0, 255), 2)
+        cv2.putText(frame, f"Vehicule Rosii: {red_vehicle_count}", (10, red_detection_line - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
 
         # Scrie cadrul in fisierul de iesire
         out.write(frame)
+        frame_number += 1
 
     # Elibereaza resurse
     release_video(cap, out)

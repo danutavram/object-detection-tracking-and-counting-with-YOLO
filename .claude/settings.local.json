@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip show *)",
+      "Bash(pip install *)",
+      "PowerShell(pip install customtkinter pillow 2>&1)",
+      "PowerShell(python -m pip install customtkinter pillow 2>&1)",
+      "PowerShell(python -m pip install ultralytics 2>&1)"
+    ]
+  }
+}

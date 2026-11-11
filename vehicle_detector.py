@@ -1,38 +1,31 @@
 # vehicle_detector.py
 
+VEHICLE_CLASSES = [2, 3, 5, 7]   # COCO: 2 - car, 3 - motorcycle, 5 - bus, 7 - truck
+CONFIDENCE_THRESHOLD = 0.5
+TRACKER_CONFIG = "bytetrack.yaml"
+
+
 def detect_vehicles(frame, model):
     """
-    Detecteaza vehicule intr-un cadru folosind modelul YOLO.
+    Detecteaza si urmareste vehiculele dintr-un cadru folosind modelul YOLO si algoritmul ByteTrack.
+
     Args:
-        frame (ndarray): Cadru video pe care se face detectia.
+        frame (ndarray): Cadrul video curent.
         model: Modelul YOLO incarcat.
+
     Returns:
-        detections (list): O lista cu detectiile sub forma [(x, y, w, h, label), ...]
+        detections (list): Lista de vehicule sub forma
+            [(x, y, w, h, track_id, cls, confidence, label), ...]
     """
-    # Aplicam modelul YOLO pentru a detecta obiecte in cadru
-    results = model(frame)
-    detections = []  # Lista pentru a stoca detectiile
+    result = model.track(frame, persist=True, tracker=TRACKER_CONFIG, classes=VEHICLE_CLASSES,
+                         conf=CONFIDENCE_THRESHOLD, verbose=False)[0]
+    detections = []
+    if result.boxes.id is None:   # niciun vehicul urmarit in acest cadru
+        return detections
 
-    for result in results:
-        if hasattr(result, 'boxes'):  # Verificam daca exista cutii de delimitare
-            for box in result.boxes:
-                cls = int(box.cls)  # Clasa obiectului detectat (ex: masina, camion, etc.)
-                confidence = float(box.conf[0])  # Confidenta detectiei
-
-                # Clasificam doar obiectele care sunt vehicule (cls in [2, 3, 5, 7])
-                if cls in [2, 3, 5, 7]:
-                    # Coordonatele colturilor cutiei de delimitare
-                    x1, y1, x2, y2 = map(int, box.xyxy[0])
-                    # Eticheta obiectului (ex: masina, camion) si confidenta
-                    label = model.names[cls]
-                    
-                    # Filtru pentru a elimina detectiile cu o confidenta scazuta
-                    if confidence < 0.5:
-                        continue
-                    
-                    # Adaugam eticheta cu confidenta in formatul "label"
-                    label = f"{label} ({confidence:.2f})"
-                    # Adaugam detectia sub forma (x1, y1, latime, inaltime, eticheta)
-                    detections.append((x1, y1, x2 - x1, y2 - y1, label))
-    
+    boxes = result.boxes
+    for (x1, y1, x2, y2), track_id, cls, confidence in zip(boxes.xyxy.int().tolist(), boxes.id.int().tolist(),
+                                                           boxes.cls.int().tolist(), boxes.conf.tolist()):
+        label = f"{model.names[cls]} ({confidence:.2f})"
+        detections.append((x1, y1, x2 - x1, y2 - y1, track_id, cls, confidence, label))
     return detections

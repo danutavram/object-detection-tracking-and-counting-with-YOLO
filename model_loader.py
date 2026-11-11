@@ -2,7 +2,10 @@
 
 from ultralytics import YOLO
 
-def load_yolo_model(model_path="yolo11s.pt"):
-    """Incarca modelul YOLO si efectueaza fuziunea pentru a optimiza performanta de inferenta."""
+MODEL_PATH = "yolo26s.pt"   # modelul folosit de aplicatie (se descarca automat la prima rulare)
+
+
+def load_yolo_model(model_path=MODEL_PATH):
+    """Incarca modelul YOLO pre-antrenat pe setul de date COCO."""
     model = YOLO(model_path)
     return model

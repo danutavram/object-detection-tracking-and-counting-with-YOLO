@@ -11,8 +11,7 @@ from tkinter import filedialog
 from PIL import Image, ImageTk
 
 from main_tracker import real_time_detection_with_callback
-from auto_calibration import background
-from calibration import (ROAD_PRESETS, calibrate_auto, calibrate_manual, draw_grid,
+from calibration import (AUTO_PRESET, ROAD_PRESETS, analyze_video, calibrate_auto, calibrate_manual, draw_grid,
                          load_calibration, save_calibration)
 
 ctk.set_appearance_mode("dark")
@@ -74,7 +73,8 @@ class App(ctk.CTk):
             anchor="w", padx=20, pady=(14, 2)
         )
         self.calib_label = ctk.CTkLabel(
-            sidebar, text="Niciun videoclip selectat", text_color="gray60", font=ctk.CTkFont(size=11)
+            sidebar, text="Niciun videoclip selectat", text_color="gray60", font=ctk.CTkFont(size=11),
+            wraplength=240, justify="left"
         )
         self.calib_label.pack(anchor="w", padx=20, pady=(0, 6))
         ctk.CTkButton(sidebar, text="Calibrare...", command=self._open_calibration, width=240).pack(padx=20)
@@ -137,6 +137,7 @@ class App(ctk.CTk):
             ("Se departeaza", "exit_count", "#ff9800"),
             ("Vehicule Rosii", "red_vehicle_count", "#f44336"),
             ("Viteza Max", "max_speed", "#ffeb3b"),
+            ("Numere citite", "plates_read", "#00c8ff"),
             ("Frame", "frame_info", "#e0e0e0"),
         ]
 
@@ -154,6 +155,14 @@ class App(ctk.CTk):
             )
             val.pack(pady=(0, 8))
             self.stat_labels[key] = val
+
+        # --- Numerele de inmatriculare citite ---
+        ctk.CTkLabel(main, text="Numere de inmatriculare citite", font=ctk.CTkFont(size=12, weight="bold")).pack(
+            anchor="w", padx=16)
+        self.plates_box = ctk.CTkTextbox(main, height=150, font=ctk.CTkFont(family="Consolas", size=14),
+                                         state="disabled", wrap="word")
+        self.plates_box.pack(fill="both", expand=True, padx=10, pady=(2, 10))
+        self._plates_shown = None
 
     # --------------------------------------------------------------- Actions --
 
@@ -305,6 +314,9 @@ class App(ctk.CTk):
         else:
             self.stat_labels["max_speed"].configure(text="necalibrat")
 
+        self._show_plates(stats.get("plates", []))
+        self.stat_labels["plates_read"].configure(text=str(len(stats.get("plates", []))))
+
         fn = stats.get("frame_number", 0)
         total = stats.get("total_frames", 0)
         self.stat_labels["frame_info"].configure(text=f"{fn}/{total}")
@@ -314,6 +326,18 @@ class App(ctk.CTk):
         if not self.stop_event.is_set():
             self._set_status(f"Procesare... frame {fn}/{total}", "#ffeb3b")
 
+    def _show_plates(self, plates):
+        """Lista numerelor citite pana acum: vehicul, numar si viteza (daca videoclipul este calibrat)."""
+        if plates == self._plates_shown:
+            return
+        self._plates_shown = plates
+        items = [f"#{tid} {plate}" + (f" ({speed:.0f} km/h)" if speed else "") for tid, plate, speed in plates]
+        self.plates_box.configure(state="normal")
+        self.plates_box.delete("1.0", "end")
+        self.plates_box.insert("1.0", "     ".join(items) if items else "-")
+        self.plates_box.configure(state="disabled")
+        self.plates_box.see("end")
+
     def _set_status(self, text, color):
         self.status_label.configure(text=text, text_color=color)
 
@@ -321,7 +345,8 @@ class App(ctk.CTk):
 class CalibrationWindow(ctk.CTkToplevel):
     """
     Fereastra de calibrare a vitezei pentru un videoclip.
-      - automat: programul gaseste marcajele discontinue; utilizatorul alege doar dimensiunile reale ale marcajului;
+      - automat: programul gaseste marcajele discontinue si identifica tipul lor (dimensiunile reale); daca
+        utilizatorul le cunoaste, le poate impune alegand un tip din lista sau "Personalizat";
       - manual: patru click-uri pe colturile unui dreptunghi de pe drum + latimea si lungimea lui in metri.
     Grila desenata peste imagine (linii din 10 in 10 m) permite verificarea vizuala inainte de salvare.
     """
@@ -338,7 +363,8 @@ class CalibrationWindow(ctk.CTkToplevel):
         self.clicks = []             # punctele alese manual, in coordonatele imaginii originale
         self._photo = None
 
-        self.info = ctk.CTkLabel(self, text="Se analizeaza videoclipul...", font=ctk.CTkFont(size=12))
+        self.info = ctk.CTkLabel(self, text="Se analizeaza videoclipul (dureaza pana la un minut)...",
+                                 font=ctk.CTkFont(size=12), wraplength=1100)
         self.info.pack(pady=(10, 6))
 
         self.canvas = tk.Canvas(self, width=self.VIEW_W, height=540, bg="#121212", highlightthickness=0)
@@ -426,14 +452,14 @@ class CalibrationWindow(ctk.CTkToplevel):
     # ------------------------------------------------------------ imagine --
 
     def _load_background(self):
-        # imaginea drumului fara vehicule
-        self._run_async(lambda: background(self.video_path), self._on_background)
+        # imaginea drumului fara vehicule + casetele masinilor (folosite la estimarea scarii reale)
+        self._run_async(lambda: analyze_video(self.video_path), self._on_background)
 
-    def _on_background(self, bg, error):
+    def _on_background(self, result, error):
         if error is not None:
             self.info.configure(text=f"Videoclipul nu a putut fi analizat: {error}", text_color="#f44336")
             return
-        self.bg = bg
+        self.bg, self.cars = result
         h, w = self.bg.shape[:2]
         self.scale = self.VIEW_W / w
         self.canvas.configure(height=int(h * self.scale))
@@ -442,7 +468,7 @@ class CalibrationWindow(ctk.CTkToplevel):
             self.calibration = saved
             self.info.configure(text=f"Calibrare salvata: {saved.describe()}", text_color="#4caf50")
         else:
-            self.info.configure(text="Alege tipul marcajului si apasa „Calibrare automata” "
+            self.info.configure(text="Apasa „Calibrare automata” (programul identifica singur marcajul) "
                                      "sau marcheaza 4 puncte pentru calibrarea manuala.", text_color="gray80")
         self._redraw()
 
@@ -473,17 +499,19 @@ class CalibrationWindow(ctk.CTkToplevel):
     def _auto(self):
         if not hasattr(self, "bg"):
             return
-        try:
-            period, dash, lane = self._number("period"), self._number("dash"), self._number("lane")
-        except ValueError:
-            self.info.configure(text="Dimensiunile marcajului trebuie sa fie numere.", text_color="#f44336")
-            return
-        if min(period, dash, lane) <= 0 or dash >= period:
-            self.info.configure(text="Dimensiunile trebuie sa fie pozitive, iar liniuta mai scurta decat "
-                                     "liniuta + pauza.", text_color="#f44336")
-            return
+        marking = None                      # None = tipul marcajului este identificat de program
+        if self.preset.get() != AUTO_PRESET:
+            try:
+                marking = (self._number("period"), self._number("dash"), self._number("lane"))
+            except ValueError:
+                self.info.configure(text="Dimensiunile marcajului trebuie sa fie numere.", text_color="#f44336")
+                return
+            if min(marking) <= 0 or marking[1] >= marking[0]:
+                self.info.configure(text="Dimensiunile trebuie sa fie pozitive, iar liniuta mai scurta decat "
+                                         "liniuta + pauza.", text_color="#f44336")
+                return
         self.info.configure(text="Se cauta marcajele...", text_color="#ffeb3b")
-        self._run_async(lambda: calibrate_auto(self.video_path, period, dash, lane, bg=self.bg), self._on_auto)
+        self._run_async(lambda: calibrate_auto(self.video_path, marking, bg=self.bg, cars=self.cars), self._on_auto)
 
     def _on_auto(self, calibration, error):
         if error is not None:
@@ -492,9 +520,23 @@ class CalibrationWindow(ctk.CTkToplevel):
         self.calibration = calibration
         self.clicks = []
         c = self.calibration.info
-        self.info.configure(
-            text=f"Gasite {c['lines']} linii discontinue ({c['points']} puncte), eroare {c['rmse']:.2f} m. "
-                 f"Verifica daca grila sta pe marcaje, apoi salveaza.", text_color="#4caf50")
+        for key in ("period", "dash", "lane"):          # dimensiunile folosite (identificate sau impuse)
+            self.entries[key].delete(0, "end")
+            self.entries[key].insert(0, f"{c[key]:g}")
+        text = f"Gasite {c['lines']} linii discontinue ({c['points']} puncte), eroare {c['rmse']:.2f} m. "
+        color = "#4caf50"
+        if "marking" not in c and abs(c["duty_measured"] - c["dash"] / c["period"]) > 0.06:
+            color = "#ff9800"           # dimensiuni impuse de utilizator care nu corespund cu ce se vede in imagine
+            text += (f"ATENTIE: in imagine liniuta este {100 * c['duty_measured']:.0f} % din liniuta + pauza, iar la "
+                     f"marcajul ales este {100 * c['dash'] / c['period']:.0f} %. Probabil este alt tip de marcaj si "
+                     f"vitezele vor fi gresite; alege „Automat”. ")
+        if "marking" in c:
+            text += f"Marcaj identificat: {c['marking']}. "
+            if c["confidence"] == "scazuta":
+                color = "#ff9800"
+                text += ("Scara este nesigura (vitezele sunt orientative): daca stii dimensiunile reale ale "
+                         "marcajului, alege-le din lista, sau foloseste calibrarea manuala. ")
+        self.info.configure(text=text + "Verifica daca grila sta pe marcaje, apoi salveaza.", text_color=color)
         self.btn_save.configure(state="normal")
         self._redraw()
 

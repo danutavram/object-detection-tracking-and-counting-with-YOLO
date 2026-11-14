@@ -39,4 +39,3 @@ def release_video(cap, out):
     """
     cap.release()
     out.release()
-    cv2.destroyAllWindows()

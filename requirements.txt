@@ -5,3 +5,4 @@ scipy
 customtkinter
 pillow
 lap
+fast-alpr[onnx]

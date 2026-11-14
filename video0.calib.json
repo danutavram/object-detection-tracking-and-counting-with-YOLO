@@ -307,6 +307,10 @@
      326.1
     ]
    ]
-  ]
+  ],
+  "marking": "Germania, autostrada (6 m + 12 m)",
+  "confidence": "ridicata",
+  "duty_measured": 0.33290169647476464,
+  "period_from_cars": 24.116024652867644
  }
 }

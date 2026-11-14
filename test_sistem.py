@@ -1,5 +1,6 @@
 # test_sistem.py
-# Test complet al sistemului pe video0.mp4: calibrare automata + tot lantul de prelucrare (fara interfata grafica)
+# Test complet al sistemului pe video0.mp4: calibrare automata (cu identificarea marcajului) + tot lantul de
+# prelucrare (fara interfata grafica)
 # si compara rezultatele cu adevarul de referinta (ground_truth.json - 68 de treceri adnotate manual).
 # Rulare:  python test_sistem.py
 import json
@@ -12,7 +13,7 @@ from main_tracker import real_time_detection_with_callback
 VIDEO, OUTPUT = "video0.mp4", "output_test.mp4"
 TOLERANCE = 20          # cadre de toleranta in jurul intervalului adnotat
 EXPECTED_RED = 5
-MARKING = (18.0, 6.0, 3.75)   # autostrada germana: perioada 18 m, liniuta 6 m, banda 3,75 m
+EXPECTED_PERIOD = 18.0        # autostrada germana: liniuta 6 m + pauza 12 m (programul trebuie sa o identifice singur)
 
 
 def match(crossings, reference):
@@ -30,11 +31,13 @@ def match(crossings, reference):
 
 def main():
     gt = json.load(open("ground_truth.json", encoding="utf-8"))
-    calib = calibrate_auto(VIDEO, *MARKING)
+    calib = calibrate_auto(VIDEO)
     save_calibration(VIDEO, calib)
-    print(f"{calib.describe()}: {calib.info['lines']} linii discontinue, {calib.info['points']} puncte, "
-          f"camera la {calib.info['camera_height_m']:.1f} m")
-    ok_calib = calib.info['lines'] == 4 and calib.info['rmse'] < 0.6
+    print(calib.describe())
+    print(f"{calib.info['lines']} linii discontinue, {calib.info['points']} puncte, camera la "
+          f"{calib.info['camera_height_m']:.1f} m; perioada marcajului {calib.info['period']:g} m "
+          f"(estimata independent din masini: {calib.info['period_from_cars']:.1f} m)")
+    ok_calib = calib.info['lines'] == 4 and calib.info['rmse'] < 0.6 and calib.info['period'] == EXPECTED_PERIOD
 
     t0 = time.time()
     r = real_time_detection_with_callback(VIDEO, OUTPUT)

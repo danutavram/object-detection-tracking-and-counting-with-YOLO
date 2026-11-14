@@ -14,7 +14,7 @@ class Tracker:
         self.counting_line = int(frame_h * counting_line_ratio)   # linia de numarare
         self.calibration = calibration             # None = videoclip necalibrat: nu se masoara viteze
         self.last_cy = {}        # id -> ultima ordonata a centrului casetei
-        self.samples = {}        # id -> [(t, Y_real)] pozitii valide pe drum
+        self.samples = {}        # id -> [(t, X, Y)] pozitii valide pe drum, in metri
         self.classes = {}        # id -> Counter cu clasele detectate (se retine cea mai frecventa)
         self.counted = {}        # id -> 'in' (se apropie de camera) / 'out' (se departeaza)
         self.cross_frame = {}    # id -> cadrul in care vehiculul a traversat linia
@@ -39,7 +39,7 @@ class Tracker:
                 gx, gy = ground_point(x, y, w, h)
                 gx, gy = gx - shift[0], gy - shift[1]          # compensarea miscarii camerei
                 if self.calibration.usable(gx, gy):
-                    self.samples.setdefault(tid, []).append((t, self.calibration.to_world(gx, gy)[1]))
+                    self.samples.setdefault(tid, []).append((t, *self.calibration.to_world(gx, gy)))
                     v = speed_from_track(self.samples[tid])
                     if v is not None:
                         self.speeds[tid] = v
@@ -70,13 +70,15 @@ class Tracker:
             'max_speed': max(counted_speeds) if counted_speeds else 0.0,
         }
 
-    def vehicles_table(self, class_names):
-        """Cate un rand pentru fiecare vehicul numarat: (id, timp [s], sens, tip, rosu, viteza [km/h] sau None)."""
+    def vehicles_table(self, class_names, plates=None):
+        """Cate un rand pentru fiecare vehicul numarat: (id, timp [s], sens, tip, rosu, viteza [km/h] sau None,
+        numar de inmatriculare sau None)."""
+        plates = plates or {}
         rows = []
         for tid in sorted(self.counted, key=lambda i: self.cross_frame[i]):
             cls = self.classes[tid].most_common(1)[0][0]
             rows.append((tid, round(self.cross_frame[tid] / self.fps, 2),
                          'se apropie' if self.counted[tid] == 'in' else 'se departeaza',
                          class_names[cls], 'da' if tid in self.red_ids else 'nu',
-                         round(self.speeds[tid], 1) if tid in self.speeds else None))
+                         round(self.speeds[tid], 1) if tid in self.speeds else None, plates.get(tid)))
         return rows

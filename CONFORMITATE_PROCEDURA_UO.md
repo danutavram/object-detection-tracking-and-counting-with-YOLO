@@ -2,7 +2,7 @@
 
 Procedura operațională privind elaborarea lucrării de finalizare a studiilor, Universitatea din Oradea, aprobată în
 Senat la 16.12.2019. Fișierul acesta ține evidența a ceea ce cere procedura și a stării proiectului față de fiecare cerință.
-Stare la 14.11.2026.
+Stare la 20.11.2026.
 
 ## 1. Ce trebuie hotărât de tine sau de coordonator (nu se poate rezolva din cod)
 
@@ -43,7 +43,8 @@ trebuie prezentat în lucrare ca fiind preluat, cu trimitere bibliografică. Lic
 | OpenCV 5.0 | citire/scriere video, morfologie, flux optic Lucas-Kanade, omografii | Apache 2.0 |
 | SciPy 1.18 | optimizarea prin cele mai mici pătrate (`least_squares`), filtre | BSD |
 | NumPy 2.5 | calcul numeric | BSD |
-| PyTorch 2.15, ONNX Runtime 1.32 | rularea rețelelor neuronale | BSD / Apache / MIT |
+| PyTorch 2.15 (varianta CUDA 13.2, de la 20.11.2026), ONNX Runtime 1.32 | rularea rețelelor neuronale (YOLO pe placa video, plăcuțele pe procesor) | BSD / Apache / MIT |
+| Bibliotecile NVIDIA incluse în PyTorch CUDA: CUDA runtime, cuBLAS, cuFFT, cuRAND, cuSOLVER, cuSPARSE, NVRTC, cuDNN 9 | calculul pe placa video (RTX 3060 Ti) | licențe proprietare NVIDIA (CUDA EULA, cuDNN) – **din memorie, neverificat**: pachetul PyTorch nu conține textul lor. Nu sunt în depozit; se instalează din download.pytorch.org |
 | CustomTkinter 5.2, Pillow 13 | interfața grafică | MIT / MIT-CMU |
 | lap 0.5 | asocierea din ByteTrack | BSD-2-Clause |
 
@@ -53,6 +54,11 @@ Trimiteri bibliografice candidate (scrise din memorie: **de verificat una câte 
 
 - Zhang, Y., Sun, P., Jiang, Y. ș.a.: ByteTrack: Multi-Object Tracking by Associating Every Detection Box, ECCV, 2022.
 - Jocher, G., Qiu, J., Chaurasia, A.: Ultralytics YOLO (software), https://github.com/ultralytics/ultralytics
+- Citările recomandate de Ultralytics (copiate de pe paginile oficiale la 20.11.2026, de verificat la redactare):
+  YOLO11 – Jocher, G., Qiu, J.: Ultralytics YOLO11, versiunea 11.0.0, 2024, https://github.com/ultralytics/ultralytics
+  (pagina spune că nu există un articol științific); YOLO26 – Jocher, G., Qiu, J., Liu, M., Lyu, S., Akyon, F. C.,
+  Kalfaoglu, M. E.: Ultralytics YOLO26: Unified Real-Time End-to-End Vision Models, arXiv:2606.03748, 2026.
+  Valorile mAP pe COCO pentru n/s/m/l/x sunt în `experimente/REZULTATE_MODELE.md`, cu sursa.
 - Lin, T.-Y. ș.a.: Microsoft COCO: Common Objects in Context, ECCV, 2014.
 - Lucas, B. D., Kanade, T.: An Iterative Image Registration Technique with an Application to Stereo Vision, IJCAI, 1981.
 - Shi, J., Tomasi, C.: Good Features to Track, CVPR, 1994.
@@ -66,7 +72,7 @@ Trimiteri bibliografice candidate (scrise din memorie: **de verificat una câte 
 
 | Fișier | Conținut | Sursă (adresă, autor) | Licență / drept de folosire | Data accesării |
 |---|---|---|---|---|
-| `video0.mp4` | autostradă, două sensuri (marcaj german) | ? | ? | ? |
+| `video0.mp4` | autostradă, două sensuri (marcaj german) | Pixabay, conform lucrării (ref. [73]); adresa exactă de completat | licență Pixabay, conform lucrării | ? |
 | `video_test1.mp4` | autostradă, două sensuri (marcaj britanic) | ? | ? | ? |
 | `video_test2.mp4` | autostradă, un sens, văzută de sus | ? | ? | ? |
 | `video_test3.mp4` | drum urban în curbă | ? | ? | ? |
@@ -76,7 +82,9 @@ Trimiteri bibliografice candidate (scrise din memorie: **de verificat una câte 
 
 Scris în acest proiect, peste componentele din secțiunea 3:
 
-- numărarea la linie cu sensul dedus din mișcare; identificarea vehiculelor roșii (prag HSV);
+- numărarea la linie cu sensul dedus din mișcare, cu linia aleasă automat dintre 7 înălțimi (cea cu cele mai multe
+  vehicule); identificarea vehiculelor roșii în Lab, față de dominanta de culoare a cadrului, pe partea vizibilă a casetei;
+- excluderea din estimarea vitezei a cadrelor în care vehiculul e acoperit de cel din față;
 - calibrarea automată din marcajele discontinue: mai multe linii pe drum drept; o singură linie, cu liniuțe alungite sau scurte;
 - identificarea tipului de marcaj din raportul liniuță/perioadă și din dimensiunile aparente ale mașinilor;
 - stabilizarea (compensarea mișcării camerei) și estimarea vitezei prin regresie pe poziția punctului de contact cu solul;
@@ -92,11 +100,13 @@ Ce poți revendica personal depinde de răspunsul la punctul 1 din secțiunea 1.
 
 | Ce | Unde | Stare |
 |---|---|---|
-| Dimensiunile marcajelor pe țări (`MARKING_STANDARDS`) | `calibration.py` | scrise din memorie, fără normativ citat; România lipsește |
+| Dimensiunile marcajelor pe țări (`MARKING_STANDARDS`) | `calibration.py` | scrise din memorie, fără normativ citat; România lipsește. Pistă pentru România: AND 616-2022, Art. 59, trimite la SR 1848-7; CP D.02.In8:2023 (Rep. Moldova), Anexa R, „conform SM SR 1848-7”: linia A 1:3, 4 m + 12 m peste 60 km/h. De confirmat în SR 1848-7:2015 |
 | Constantele „lățime aparentă 1,95 m”, „flanc vizibil 3,4 m”, „neclaritate 2 px” | `auto_calibration.py` | ajustate pe clipurile `video0` și `video_test1`; nu sunt validate pe date independente |
 | Vitezele de pe toate clipurile | rezultate | nu există nicio măsurătoare de referință a vitezei (radar, GPS); se poate susține doar coerența internă |
 | Scara pe `video_test2`, `video_test3`, `video_test4` | rezultate | programul însuși o marchează „nesigură”; pe `video_test3` a variat între 6 și 9 m la mici schimbări |
-| Numărarea pe `video_test1`–`4` | rezultate | verificată doar vizual, parțial; referință adnotată există doar pentru `video0` |
+| Numărarea pe `video_test1`–`4` | rezultate | referință adnotată completă doar pentru `video0`. `video_test4`: 48 ± 5, numărat manual pe imaginea-timp (`experimente/imagine_timp.py`), programul dă 48. `video_test3`: fiecare trecere verificată pe imaginea-timp de la linie (44 corecte, 1 dublă). `video_test1`: verificate doar trecerile în care modelele diferă. `video_test2`: 16, din verificare vizuală anterioară |
+| Pragurile pentru roșu (croma 10, nuanța −20°…+30°, proporția 0,17) și pentru vehicul acoperit (0,85) | `red_vehicle_counter.py`, `speed_estimator.py` | alese pe cele 5 clipuri de test și verificate pe aceleași clipuri (roșii clasificate manual pe planșe); nu sunt validate pe date independente |
 | Acuratețea LPR | `video_test4` | 5 numere verificate vizual din 19 citite; fără listă de referință |
 
-Singurul rezultat cu referință independentă este numărarea pe `video0.mp4` (34 + 34 din 68, 5 vehicule roșii din 5).
+Singurul rezultat cu referință independentă completă este numărarea pe `video0.mp4` (34 + 34 din 68, 5 vehicule roșii
+din 5). Referința pentru `video_test4` e o numărătoare manuală, cu incertitudinea notată.

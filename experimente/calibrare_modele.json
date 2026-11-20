@@ -1,0 +1,30 @@
+{
+ "yolo11s@video0": {
+  "marking": "Germania, autostrada (6 m + 12 m)",
+  "period": 18.0,
+  "confidence": "ridicata",
+  "from_cars": 25.10950397445093,
+  "cars": 382
+ },
+ "yolo26s@video0": {
+  "marking": "Germania, autostrada (6 m + 12 m)",
+  "period": 18.0,
+  "confidence": "ridicata",
+  "from_cars": 24.116024652867644,
+  "cars": 402
+ },
+ "yolo11s@video_test1": {
+  "marking": "Marea Britanie, autostrada (2 m + 7 m)",
+  "period": 9.0,
+  "confidence": "ridicata",
+  "from_cars": 9.807566430415934,
+  "cars": 467
+ },
+ "yolo26s@video_test1": {
+  "marking": "Marea Britanie, autostrada (2 m + 7 m)",
+  "period": 9.0,
+  "confidence": "ridicata",
+  "from_cars": 9.37598580559455,
+  "cars": 499
+ }
+}

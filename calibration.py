@@ -11,6 +11,7 @@
 import json
 import os
 import sys
+import threading
 
 import cv2
 import numpy as np
@@ -33,7 +34,7 @@ MARKING_STANDARDS = [
     ("Spania, urban (2 m + 5,5 m)", 7.5, 2.0, 3.0),
     ("6 m + 9 m", 15.0, 6.0, 3.5),
 ]
-AUTO_PRESET, CUSTOM_PRESET = "Automat (programul identifica marcajul)", "Personalizat"
+AUTO_PRESET, CUSTOM_PRESET = "Automat (programul identifică marcajul)", "Personalizat"   # doar in interfata
 ROAD_PRESETS = {AUTO_PRESET: None, **{name: dims for name, *dims in MARKING_STANDARDS}, CUSTOM_PRESET: None}
 
 DUTY_TOLERANCE = 0.03                 # precizia cu care se masoara raportul liniuta / perioada
@@ -114,10 +115,35 @@ def detect_cars(frames):
     return np.array(cars, dtype=float).reshape(-1, 4)
 
 
+# Imaginea drumului fara vehicule, pastrata in memorie pentru fiecare videoclip (cheie: cale + data modificarii):
+# calculul ei dureaza ~15 s (citirea a 60 de cadre raspandite pe tot clipul + mediana) si e folosit de calibrare si de
+# stabilizare la fiecare pornire a procesarii.
+_BACKGROUNDS = {}
+_BACKGROUND_LOCK = threading.Lock()
+
+
+def _video_key(video_path):
+    return os.path.abspath(video_path), os.path.getmtime(video_path)
+
+
+def video_background(video_path):
+    """Imaginea drumului fara vehicule (calculata o singura data pe sesiune pentru fiecare videoclip)."""
+    with _BACKGROUND_LOCK:
+        key = _video_key(video_path)
+        if key not in _BACKGROUNDS:
+            _BACKGROUNDS[key] = ac.background(video_path)
+        return _BACKGROUNDS[key]
+
+
 def analyze_video(video_path):
     """Citeste un esantion de cadre si intoarce (imaginea drumului fara vehicule, casetele autoturismelor)."""
     frames = ac.sample_frames(video_path)
-    return ac.background(video_path, frames=frames), detect_cars(frames)
+    with _BACKGROUND_LOCK:
+        key = _video_key(video_path)
+        if key not in _BACKGROUNDS:
+            _BACKGROUNDS[key] = ac.background(video_path, frames=frames)
+        bg = _BACKGROUNDS[key]
+    return bg, detect_cars(frames)
 
 
 def identify_marking(duty, period_estimate, sigma):

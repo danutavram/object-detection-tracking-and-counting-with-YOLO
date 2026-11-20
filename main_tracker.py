@@ -6,19 +6,24 @@ import os
 import cv2
 from model_loader import load_yolo_model
 from video_manager import open_video, initialize_video_writer, release_video
-from vehicle_detector import detect_vehicles
+from vehicle_detector import detect_vehicles, CLASS_NAMES
 from tracker import Tracker
-from calibration import load_calibration, Stabilizer
-from auto_calibration import background
+from calibration import load_calibration, video_background, Stabilizer
 
 
 def create_plate_reader():
-    """Cititorul de numere de inmatriculare sau None daca biblioteca fast-alpr nu este instalata."""
+    """
+    (cititorul de numere de inmatriculare, None) sau (None, motivul) daca nu poate fi pornit: biblioteca fast-alpr
+    lipseste sau, la prima rulare pe un calculator, modelele ei nu se pot descarca (fara internet).
+    Restul programului merge si fara el.
+    """
     try:
         from plate_reader import PlateReader
-        return PlateReader()
-    except ImportError:
-        return None
+        return PlateReader(), None
+    except Exception as e:
+        reason = f"{type(e).__name__}: {e}"
+        print(f"Citirea numerelor de inmatriculare este dezactivata: {reason}")
+        return None, reason
 
 
 def draw_annotations(frame, detections, tracker, stats, plates):
@@ -27,7 +32,7 @@ def draw_annotations(frame, detections, tracker, stats, plates):
     for x, y, w, h, tid, cls, confidence, label in detections:
         color = (0, 0, 255) if tid in tracker.red_ids else (0, 255, 0)
         cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
-        text = f"#{tid} {label.split(' ')[0]}"
+        text = f"#{tid} {CLASS_NAMES[cls]}"
         if tid in tracker.speeds:
             text += f" {tracker.speeds[tid]:.0f} km/h"
         (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)
@@ -81,10 +86,12 @@ def real_time_detection_with_callback(video_path, output_path, frame_callback=No
         dict cu statisticile finale (sau None daca videoclipul nu poate fi deschis).
     """
     model = load_yolo_model()
-    plate_reader = create_plate_reader() if read_plates else None
+    plate_reader, plates_problem = create_plate_reader() if read_plates else (None, None)
+    # starea citirii numerelor, pentru interfata: None = activa
+    plates_status = None if plate_reader is not None else ("oprita" if not read_plates else f"indisponibila ({plates_problem})")
 
     calibration = load_calibration(video_path)
-    stabilizer = Stabilizer(background(video_path)) if calibration is not None else None
+    stabilizer = Stabilizer(video_background(video_path)) if calibration is not None else None
 
     cap = open_video(video_path)
     if cap is None:
@@ -112,24 +119,28 @@ def real_time_detection_with_callback(video_path, output_path, frame_callback=No
         shift = stabilizer.shift(frame) if stabilizer is not None else (0.0, 0.0)
         stats = tracker.update(frame, detections, frame_number, shift)
         plates = plate_reader.update(frame, detections, frame_number) if plate_reader is not None else {}
-        stats['plates_read'] = sum(1 for tid in tracker.counted if tid in plates)
+        # numerele raportate (imagine, interfata, CSV) sunt doar ale vehiculelor numarate
+        counted_plates = [(tid, plates[tid], tracker.speeds.get(tid))
+                          for tid in sorted(tracker.counted, key=lambda i: tracker.cross_frame[i]) if tid in plates]
+        stats['plates_read'] = len(counted_plates)
         draw_annotations(frame, detections, tracker, stats, plates)
 
         out.write(frame)
         if frame_callback:
             frame_callback(frame.copy(), dict(stats, frame_number=frame_number, total_frames=total_frames,
-                                              calibrated=calibration is not None,
-                                              plates=[(tid, plate, tracker.speeds.get(tid))
-                                                      for tid, plate in plates.items()]))
+                                              calibrated=calibration is not None, plates=counted_plates,
+                                              plates_status=plates_status,
+                                              line_ratio=tracker.counting_line / frame_height))
         frame_number += 1
 
     release_video(cap, out)
     table_path = os.path.splitext(output_path)[0] + ".csv"
     plates = plate_reader.plates if plate_reader is not None else {}
-    save_vehicle_table(table_path, tracker.vehicles_table(model.names, plates))
+    save_vehicle_table(table_path, tracker.vehicles_table(CLASS_NAMES, plates))
     return dict(stats, frames=frame_number, calibrated=calibration is not None, table_path=table_path,
                 speeds=dict(tracker.speeds), counted=dict(tracker.counted), plates=dict(plates),
-                cross_frame=dict(tracker.cross_frame), red_ids=sorted(tracker.red_ids))
+                cross_frame=dict(tracker.cross_frame), red_ids=sorted(tracker.red_ids),
+                plates_status=plates_status, line_ratio=tracker.counting_line / frame_height)
 
 
 def real_time_detection(video_path, output_path):
@@ -143,7 +154,9 @@ def real_time_detection(video_path, output_path):
             print(f"Viteza maxima:  {result['max_speed']:.0f} km/h")
         else:
             print("Viteza:         videoclip necalibrat (rulati calibrarea din interfata sau calibration.py)")
-        print(f"Numere citite:  {result['plates_read']}")
+        print(f"Numere citite:  {result['plates_read']}" if result['plates_status'] is None
+              else f"Numere citite:  citirea este {result['plates_status']}")
+        print(f"Linia de numarare: {100 * result['line_ratio']:.0f} % din inaltimea imaginii (aleasa automat)")
         print(f"Videoclip salvat: {output_path}")
         print(f"Tabel vehicule:   {result['table_path']}")
     return result

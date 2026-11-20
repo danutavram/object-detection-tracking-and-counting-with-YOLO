@@ -1,0 +1,9 @@
+# ByteTrack folosit conform designului original: detectiile >= 0,5 asociaza in prima etapa,
+# cele intre 0,1 si 0,5 doar prelungesc piste existente (a doua etapa), iar o pista noua porneste doar de la >= 0,6.
+tracker_type: bytetrack
+track_high_thresh: 0.5
+track_low_thresh: 0.1
+new_track_thresh: 0.6
+track_buffer: 30
+match_thresh: 0.8
+fuse_score: True

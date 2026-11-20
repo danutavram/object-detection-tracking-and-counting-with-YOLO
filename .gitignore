@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 *.pt
 *.mp4
+*_output.csv
+output_test.csv
+experimente/imagini_timp/
